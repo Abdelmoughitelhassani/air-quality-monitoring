@@ -1,0 +1,51 @@
+# Python / Django caches & compiled files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments (very common names)
+venv/
+env/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Django specific
+*.log
+*.pot
+*.sqlite3
+media/
+staticfiles/
+migrations__/
+migrations_backup_*/
+
+# Byte-compiled / optimized / DLL files (extra safety)
+__pychache__/
+*.so
+*.pyc
+
+# Editor / OS generated files
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.DS_Store
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Other files from your screenshot you probably don't want in git
+api-key*.txt
+consumer.py               # ← usually contains secrets/keys
+data_processed_final*.csv  # ← processed data (often large / regeneratable)
+
+# If you really never want to commit any csv data files:
+*.csv

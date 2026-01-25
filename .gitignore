@@ -49,3 +49,10 @@ data_processed_final*.csv  # ← processed data (often large / regeneratable)
 
 # If you really never want to commit any csv data files:
 *.csv
+
+
+checkpoint/
+output_folder/
+data/
+*.log
+__pycache__/

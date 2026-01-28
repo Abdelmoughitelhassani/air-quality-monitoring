@@ -1,30 +1,18 @@
 """
-🌬️ Spark Structured Streaming - Air Quality Multi-Sensors Virtuels
-====================================================================
+🌬️ Spark Structured Streaming - Air Quality avec PostgreSQL + Kafka
+=====================================================================
 Projet PFE : Système Intelligent de Surveillance de la Qualité de l'Air
 Auteurs : El Hassani Abdelmoughit & Boulghalegh Youssef
 
 ARCHITECTURE:
 - 1 capteur physique (PMS5003) envoie les données brutes vers Kafka
 - Spark crée N capteurs VIRTUELS par zone (simulation)
-- Chaque capteur virtuel a ses propres variations
 - Calcul AQI individuel par capteur virtuel
 - Calcul moyenne AQI par zone
 
-CONFIGURATION DYNAMIQUE:
-- Ajouter/supprimer des capteurs virtuels dans SENSORS_CONFIG
-- Le code s'adapte automatiquement
-- Supporte des centaines/milliers de capteurs virtuels
-
-FORMAT JSON D'ENTRÉE (capteur physique):
-{
-  "date": "2026-01-24",
-  "time": "20:44:25",
-  "pm10_cf1": 9,
-  "pm25_cf1": 10,
-  "pm100_cf1": 10,
-  ...
-}
+SORTIES:
+- Kafka: Topics air_quality_sensors et air_quality_zones (temps réel)
+- PostgreSQL: Tables sensor_readings et zone_averages (persistance)
 """
 
 from pyspark.sql import SparkSession
@@ -53,9 +41,9 @@ KAFKA_CONFIG = {
 }
 
 # Topics
-INPUT_TOPIC = "topic_9"  # Données brutes du capteur physique
-OUTPUT_TOPIC_SENSORS = "air_quality_sensors"  # Données par capteur virtuel
-OUTPUT_TOPIC_ZONES = "air_quality_zones"  # Moyennes par zone
+INPUT_TOPIC = "topic_16"  # Données brutes du capteur physique
+OUTPUT_TOPIC_SENSORS = "air_quality_sensors3"  # Données par capteur virtuel
+OUTPUT_TOPIC_ZONES = "air_quality_zones3"  # Moyennes par zone
 
 # Checkpoint
 CHECKPOINT_DIR = "/checkpoint"
@@ -65,28 +53,41 @@ AGGREGATION_WINDOW = "1 minute"
 WATERMARK_DELAY = "30 seconds"
 
 # ============================================================
+# 🗄️ CONFIGURATION POSTGRESQL
+# ============================================================
+POSTGRES_CONFIG = {
+    "host": "postgres",           # Nom du conteneur Docker
+    "port": "5432",
+    "database": "airquality",
+    "user": "airquality_user",
+    "password": "airquality_pass",
+}
+
+POSTGRES_URL = f"jdbc:postgresql://{POSTGRES_CONFIG['host']}:{POSTGRES_CONFIG['port']}/{POSTGRES_CONFIG['database']}"
+POSTGRES_PROPERTIES = {
+    "user": POSTGRES_CONFIG["user"],
+    "password": POSTGRES_CONFIG["password"],
+    "driver": "org.postgresql.Driver"
+}
+
+# Tables PostgreSQL
+TABLE_SENSORS = "sensor_readings"
+TABLE_ZONES = "zone_averages"
+
+# ============================================================
 # 🔧 CONFIGURATION DES CAPTEURS VIRTUELS PAR ZONE
 # ============================================================
-# MODIFIEZ ICI pour ajouter/supprimer des capteurs virtuels
-# Chaque capteur a:
-#   - id: identifiant unique
-#   - lat/lon: coordonnées GPS
-#   - variation: facteur de variation local (0.9 = -10%, 1.1 = +10%)
-#   - description: emplacement du capteur
-
 SENSORS_CONFIG = {
     "centre_ville": {
         "zone_name": "Centre-Ville",
-        "pm_factor": 1.2,           # Facteur de pollution de la zone
-        "variability": 0.15,         # Variabilité de la zone
+        "pm_factor": 1.2,
+        "variability": 0.15,
         "rush_hour_boost": 1.3,
         "night_reduction": 0.85,
         "sensors": [
             {"id": "CV_001", "lat": 47.5103, "lon": 6.7983, "variation": 1.0, "desc": "Mairie"},
             {"id": "CV_002", "lat": 47.5110, "lon": 6.7970, "variation": 1.05, "desc": "Gare"},
             {"id": "CV_003", "lat": 47.5095, "lon": 6.7995, "variation": 0.95, "desc": "Place centrale"},
-            # ➕ AJOUTEZ VOS CAPTEURS ICI:
-            # {"id": "CV_004", "lat": 47.5100, "lon": 6.7980, "variation": 1.02, "desc": "École"},
         ]
     },
     "zone_industrielle": {
@@ -100,7 +101,6 @@ SENSORS_CONFIG = {
             {"id": "ZI_002", "lat": 47.4940, "lon": 6.8170, "variation": 1.15, "desc": "Usine PSA"},
             {"id": "ZI_003", "lat": 47.4960, "lon": 6.8130, "variation": 0.90, "desc": "Entrepôts"},
             {"id": "ZI_004", "lat": 47.4945, "lon": 6.8160, "variation": 1.10, "desc": "Parking PL"},
-            # ➕ AJOUTEZ VOS CAPTEURS ICI:
         ]
     },
     "residentiel": {
@@ -112,7 +112,6 @@ SENSORS_CONFIG = {
         "sensors": [
             {"id": "RES_001", "lat": 47.5150, "lon": 6.7850, "variation": 1.0, "desc": "École primaire"},
             {"id": "RES_002", "lat": 47.5160, "lon": 6.7840, "variation": 0.95, "desc": "Lotissement Nord"},
-            # ➕ AJOUTEZ VOS CAPTEURS ICI:
         ]
     },
     "parc_pres_la_rose": {
@@ -125,7 +124,6 @@ SENSORS_CONFIG = {
             {"id": "PARC_001", "lat": 47.5050, "lon": 6.7880, "variation": 1.0, "desc": "Entrée principale"},
             {"id": "PARC_002", "lat": 47.5055, "lon": 6.7890, "variation": 0.98, "desc": "Lac"},
             {"id": "PARC_003", "lat": 47.5045, "lon": 6.7875, "variation": 1.02, "desc": "Aire de jeux"},
-            # ➕ AJOUTEZ VOS CAPTEURS ICI:
         ]
     },
     "peripherie": {
@@ -137,13 +135,12 @@ SENSORS_CONFIG = {
         "sensors": [
             {"id": "PER_001", "lat": 47.5200, "lon": 6.8100, "variation": 1.0, "desc": "Route nationale"},
             {"id": "PER_002", "lat": 47.5210, "lon": 6.8090, "variation": 1.05, "desc": "Zone commerciale"},
-            # ➕ AJOUTEZ VOS CAPTEURS ICI:
         ]
     },
 }
 
 # ============================================================
-# SCHÉMA JSON DU CAPTEUR PHYSIQUE (format actuel)
+# SCHÉMA JSON DU CAPTEUR PHYSIQUE
 # ============================================================
 SENSOR_SCHEMA = StructType([
     StructField("date", StringType(), True),
@@ -166,10 +163,7 @@ SENSOR_SCHEMA = StructType([
 # GÉNÉRATION DE LA LISTE DES CAPTEURS VIRTUELS
 # ============================================================
 def get_all_virtual_sensors():
-    """
-    Génère la liste complète des capteurs virtuels depuis SENSORS_CONFIG.
-    Retourne une liste de tuples pour créer le array Spark.
-    """
+    """Génère la liste complète des capteurs virtuels depuis SENSORS_CONFIG."""
     sensors = []
     for zone_id, zone_config in SENSORS_CONFIG.items():
         for sensor in zone_config["sensors"]:
@@ -210,8 +204,10 @@ def print_sensors_summary():
 # ============================================================
 def create_spark_session():
     return SparkSession.builder \
-        .appName("AirQuality_VirtualSensors_Streaming") \
-        .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0") \
+        .appName("AirQuality_VirtualSensors_PostgreSQL") \
+        .config("spark.jars.packages", 
+                "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,"
+                "org.postgresql:postgresql:42.6.0") \
         .config("spark.sql.shuffle.partitions", "4") \
         .config("spark.streaming.backpressure.enabled", "true") \
         .getOrCreate()
@@ -221,7 +217,6 @@ def create_spark_session():
 # ============================================================
 def read_from_kafka(spark):
     """Lit les données depuis Kafka Confluent Cloud"""
-    
     jaas_config = (
         f'org.apache.kafka.common.security.plain.PlainLoginModule required '
         f'username="{KAFKA_CONFIG["sasl_username"]}" '
@@ -243,12 +238,9 @@ def read_from_kafka(spark):
 # PIPELINE DE TRAITEMENT - CAPTEURS VIRTUELS
 # ============================================================
 def process_with_virtual_sensors(kafka_df):
-    """
-    Traite les données du capteur physique et crée les capteurs virtuels.
-    1 message entrant → N messages sortants (un par capteur virtuel)
-    """
+    """Traite les données du capteur physique et crée les capteurs virtuels."""
     
-    # 1. Parser le JSON du capteur physique
+    # 1. Parser le JSON
     parsed_df = kafka_df \
         .selectExpr("CAST(value AS STRING) as json_str", "timestamp as kafka_timestamp") \
         .select(
@@ -257,7 +249,7 @@ def process_with_virtual_sensors(kafka_df):
         ) \
         .select("data.*", "kafka_timestamp")
     
-    # 2. Créer datetime et extraire l'heure
+    # 2. Créer datetime
     with_datetime = parsed_df \
         .withColumn("datetime", to_timestamp(concat_ws(" ", col("date"), col("time")))) \
         .withColumn("hour", hour(col("datetime"))) \
@@ -265,9 +257,8 @@ def process_with_virtual_sensors(kafka_df):
         .withColumn("pm25_raw", col("pm25_cf1").cast("double")) \
         .withColumn("pm10_raw", col("pm100_cf1").cast("double"))
     
-    # 3. Créer l'array des capteurs virtuels depuis la config
+    # 3. Créer l'array des capteurs virtuels
     virtual_sensors = get_all_virtual_sensors()
-    
     sensors_array = array([
         struct(
             lit(s["sensor_id"]).alias("sensor_id"),
@@ -286,15 +277,12 @@ def process_with_virtual_sensors(kafka_df):
     # 4. Exploser pour créer 1 ligne par capteur virtuel
     exploded_df = with_datetime.withColumn("sensor", explode(sensors_array))
     
-    # 5. Extraire les colonnes du capteur virtuel
+    # 5. Extraire les colonnes
     sensor_df = exploded_df.select(
-        # Données temporelles
         col("datetime"), col("date"), col("time"), col("hour"), col("kafka_timestamp"),
-        # Données brutes du capteur physique
         col("pm1_raw"), col("pm25_raw"), col("pm10_raw"),
         col("gr03um"), col("gr05um"), col("gr10um"),
         col("gr25um"), col("gr50um"), col("gr100um"),
-        # Configuration du capteur virtuel
         col("sensor.sensor_id").alias("sensor_id"),
         col("sensor.zone_id").alias("zone_id"),
         col("sensor.zone_name").alias("zone_name"),
@@ -307,7 +295,7 @@ def process_with_virtual_sensors(kafka_df):
         col("sensor.night_reduction").alias("night_reduction"),
     )
     
-    # 6. Calculer les facteurs temporels
+    # 6. Facteurs temporels
     adjusted_df = sensor_df \
         .withColumn("is_rush_hour",
             when((col("hour") >= 7) & (col("hour") <= 9), True)
@@ -319,23 +307,22 @@ def process_with_virtual_sensors(kafka_df):
             .otherwise(False)
         )
     
-    # 7. Calculer le facteur total (zone + capteur + temps + aléatoire)
+    # 7. Facteur total
     adjusted_df = adjusted_df.withColumn(
         "total_factor",
-        col("pm_factor") *                                                    # Facteur de la zone
-        col("sensor_variation") *                                             # Variation du capteur
-        when(col("is_rush_hour"), col("rush_hour_boost")).otherwise(lit(1.0)) *  # Heures de pointe
-        when(col("is_night"), col("night_reduction")).otherwise(lit(1.0)) *      # Nuit
-        (lit(1.0) + (rand() * 2 - 1) * col("variability"))                    # Variation aléatoire
+        col("pm_factor") * col("sensor_variation") *
+        when(col("is_rush_hour"), col("rush_hour_boost")).otherwise(lit(1.0)) *
+        when(col("is_night"), col("night_reduction")).otherwise(lit(1.0)) *
+        (lit(1.0) + (rand() * 2 - 1) * col("variability"))
     )
     
-    # 8. Appliquer les facteurs aux mesures PM
+    # 8. Appliquer aux PM
     augmented_df = adjusted_df \
         .withColumn("pm1_0_atm", spark_round(col("pm1_raw") * col("total_factor"), 1)) \
         .withColumn("pm2_5_atm", spark_round(col("pm25_raw") * col("total_factor"), 1)) \
         .withColumn("pm10_atm", spark_round(col("pm10_raw") * col("total_factor"), 1))
     
-    # 9. Appliquer aux particules
+    # 9. Particules
     particle_factor = col("pm_factor") * col("sensor_variation") * \
         when(col("is_rush_hour"), col("rush_hour_boost")).otherwise(lit(1.0))
     
@@ -347,7 +334,7 @@ def process_with_virtual_sensors(kafka_df):
         .withColumn("particles_50", (col("gr50um") * particle_factor * (lit(1.0) + (rand() * 2 - 1) * col("variability"))).cast("int")) \
         .withColumn("particles_100", (col("gr100um") * particle_factor * (lit(1.0) + (rand() * 2 - 1) * col("variability"))).cast("int"))
     
-    # 10. Calculer l'AQI
+    # 10. AQI
     metrics_df = augmented_df.withColumn(
         "aqi",
         when(col("pm2_5_atm") <= 12.0, 
@@ -366,7 +353,7 @@ def process_with_virtual_sensors(kafka_df):
         .cast("int")
     )
     
-    # 11. Ajouter catégorie, couleur, recommandation
+    # 11. Catégories AQI
     metrics_df = metrics_df \
         .withColumn("aqi_category",
             when(col("aqi") <= 50, "Bon")
@@ -421,39 +408,29 @@ def process_with_virtual_sensors(kafka_df):
         ) \
         .withColumn("sport_ok", when(col("aqi") <= 100, True).otherwise(False))
     
-    # 13. Sélection finale - données par capteur virtuel
+    # 13. Sélection finale
     final_sensor_df = enriched_df.select(
-        # Identifiants
         "sensor_id", "zone_id", "zone_name", "latitude", "longitude",
-        # Timestamp
         "datetime", "date", "time", "hour",
-        # Mesures PM
         "pm1_0_atm", "pm2_5_atm", "pm10_atm",
-        # Particules
         "particles_03", "particles_05", "particles_10",
         "particles_25", "particles_50", "particles_100",
-        # AQI
         "aqi", "aqi_category", "aqi_color", "aqi_recommendation",
         "air_quality_percent",
-        # Temporel
         "day_of_week", "day_name", "month", "is_weekend", "period",
-        # Sport
         "sport_ok"
     )
     
     return final_sensor_df
 
 # ============================================================
-# AGRÉGATION PAR ZONE (Moyennes)
+# AGRÉGATION PAR ZONE
 # ============================================================
 def aggregate_by_zone(sensor_df):
     """Calcule les moyennes par zone avec fenêtre temporelle"""
     
-    # Ajouter watermark pour le streaming
-    windowed_df = sensor_df \
-        .withWatermark("datetime", WATERMARK_DELAY)
+    windowed_df = sensor_df.withWatermark("datetime", WATERMARK_DELAY)
     
-    # Agrégation par zone et fenêtre temporelle
     zone_aggregated = windowed_df \
         .groupBy(
             window(col("datetime"), AGGREGATION_WINDOW),
@@ -461,35 +438,21 @@ def aggregate_by_zone(sensor_df):
             col("zone_name")
         ) \
         .agg(
-            # Nombre de capteurs actifs dans la zone
             count("sensor_id").alias("active_sensors"),
-            
-            # Moyennes PM
             spark_round(avg("pm1_0_atm"), 1).alias("avg_pm1_0"),
             spark_round(avg("pm2_5_atm"), 1).alias("avg_pm2_5"),
             spark_round(avg("pm10_atm"), 1).alias("avg_pm10"),
-            
-            # Min/Max PM2.5
             spark_round(min("pm2_5_atm"), 1).alias("min_pm2_5"),
             spark_round(max("pm2_5_atm"), 1).alias("max_pm2_5"),
-            
-            # Moyennes AQI
             spark_round(avg("aqi"), 0).alias("avg_aqi"),
             min("aqi").alias("min_aqi"),
             max("aqi").alias("max_aqi"),
-            
-            # Moyenne qualité air
             spark_round(avg("air_quality_percent"), 1).alias("avg_air_quality_percent"),
-            
-            # Coordonnées moyennes de la zone (centre)
             spark_round(avg("latitude"), 4).alias("zone_latitude"),
             spark_round(avg("longitude"), 4).alias("zone_longitude"),
-            
-            # Liste des capteurs actifs
             collect_list("sensor_id").alias("sensor_ids"),
         )
     
-    # Ajouter les métadonnées AQI pour la zone
     zone_with_category = zone_aggregated \
         .withColumn("zone_aqi_category",
             when(col("avg_aqi") <= 50, "Bon")
@@ -516,7 +479,6 @@ def aggregate_by_zone(sensor_df):
             .otherwise("Urgence sanitaire")
         )
     
-    # Format final pour les zones
     zone_df = zone_with_category.select(
         col("window.start").alias("window_start"),
         col("window.end").alias("window_end"),
@@ -534,73 +496,112 @@ def aggregate_by_zone(sensor_df):
     return zone_df
 
 # ============================================================
-# ÉCRITURE DES RÉSULTATS
+# 🗄️ ÉCRITURE POSTGRESQL (foreachBatch)
 # ============================================================
-def write_to_console_sensors(df, query_name):
-    """Écrit les données capteurs vers la console"""
-    return df.writeStream \
-        .outputMode("append") \
-        .format("console") \
-        .option("truncate", False) \
-        .option("numRows", 20) \
-        .option("checkpointLocation", f"{CHECKPOINT_DIR}/{query_name}") \
-        .queryName(query_name) \
-        .start()
+def write_sensors_to_postgres(batch_df, batch_id):
+    """Écrit un batch de données capteurs vers PostgreSQL"""
+    if batch_df.count() > 0:
+        try:
+            batch_df.write \
+                .jdbc(
+                    url=POSTGRES_URL,
+                    table=TABLE_SENSORS,
+                    mode="append",
+                    properties=POSTGRES_PROPERTIES
+                )
+            print(f"   📥 PostgreSQL: {batch_df.count()} lignes → {TABLE_SENSORS}")
+        except Exception as e:
+            print(f"   ❌ Erreur PostgreSQL (sensors): {e}")
 
-def write_to_console_zones(df, query_name):
-    """Écrit les données zones vers la console"""
-    return df.writeStream \
-        .outputMode("update") \
-        .format("console") \
-        .option("truncate", False) \
-        .option("numRows", 10) \
-        .option("checkpointLocation", f"{CHECKPOINT_DIR}/{query_name}") \
-        .queryName(query_name) \
-        .start()
+def write_zones_to_postgres(batch_df, batch_id):
+    """Écrit un batch de données zones vers PostgreSQL"""
+    if batch_df.count() > 0:
+        try:
+            # Convertir sensor_ids array en string pour PostgreSQL
+            df_to_write = batch_df \
+                .withColumn("sensor_ids_str", concat_ws(",", col("sensor_ids"))) \
+                .drop("sensor_ids")
+            
+            df_to_write.write \
+                .jdbc(
+                    url=POSTGRES_URL,
+                    table=TABLE_ZONES,
+                    mode="append",
+                    properties=POSTGRES_PROPERTIES
+                )
+            print(f"   📥 PostgreSQL: {df_to_write.count()} lignes → {TABLE_ZONES}")
+        except Exception as e:
+            print(f"   ❌ Erreur PostgreSQL (zones): {e}")
 
-def write_to_kafka_sensors(df):
-    """Écrit les données capteurs vers Kafka"""
-    json_df = df.select(to_json(struct("*")).alias("value"))
-    
-    jaas_config = (
+# ============================================================
+# ÉCRITURE KAFKA
+# ============================================================
+def get_kafka_jaas_config():
+    return (
         f'org.apache.kafka.common.security.plain.PlainLoginModule required '
         f'username="{KAFKA_CONFIG["sasl_username"]}" '
         f'password="{KAFKA_CONFIG["sasl_password"]}";'
     )
+
+def write_sensors_to_kafka_and_postgres(df):
+    """Écrit les données capteurs vers Kafka ET PostgreSQL"""
     
-    return json_df.writeStream \
-        .format("kafka") \
-        .option("kafka.bootstrap.servers", KAFKA_CONFIG["bootstrap_servers"]) \
-        .option("kafka.security.protocol", KAFKA_CONFIG["security_protocol"]) \
-        .option("kafka.sasl.mechanism", KAFKA_CONFIG["sasl_mechanism"]) \
-        .option("kafka.sasl.jaas.config", jaas_config) \
-        .option("topic", OUTPUT_TOPIC_SENSORS) \
-        .option("checkpointLocation", f"{CHECKPOINT_DIR}/kafka_sensors") \
+    def foreach_batch_sensors(batch_df, batch_id):
+        if batch_df.count() > 0:
+            # 1. Écrire vers PostgreSQL
+            write_sensors_to_postgres(batch_df, batch_id)
+            
+            # 2. Écrire vers Kafka
+            try:
+                json_df = batch_df.select(to_json(struct("*")).alias("value"))
+                json_df.write \
+                    .format("kafka") \
+                    .option("kafka.bootstrap.servers", KAFKA_CONFIG["bootstrap_servers"]) \
+                    .option("kafka.security.protocol", KAFKA_CONFIG["security_protocol"]) \
+                    .option("kafka.sasl.mechanism", KAFKA_CONFIG["sasl_mechanism"]) \
+                    .option("kafka.sasl.jaas.config", get_kafka_jaas_config()) \
+                    .option("topic", OUTPUT_TOPIC_SENSORS) \
+                    .save()
+                print(f"   📤 Kafka: {batch_df.count()} messages → {OUTPUT_TOPIC_SENSORS}")
+            except Exception as e:
+                print(f"   ❌ Erreur Kafka (sensors): {e}")
+    
+    return df.writeStream \
+        .foreachBatch(foreach_batch_sensors) \
+        .option("checkpointLocation", f"{CHECKPOINT_DIR}/sensors_combined") \
         .outputMode("append") \
         .start()
 
-def write_to_kafka_zones(df):
-    """Écrit les moyennes zones vers Kafka"""
-    # Convertir sensor_ids array en string pour JSON
-    json_df = df \
-        .withColumn("sensor_ids_str", concat_ws(",", col("sensor_ids"))) \
-        .drop("sensor_ids") \
-        .select(to_json(struct("*")).alias("value"))
+def write_zones_to_kafka_and_postgres(df):
+    """Écrit les données zones vers Kafka ET PostgreSQL"""
     
-    jaas_config = (
-        f'org.apache.kafka.common.security.plain.PlainLoginModule required '
-        f'username="{KAFKA_CONFIG["sasl_username"]}" '
-        f'password="{KAFKA_CONFIG["sasl_password"]}";'
-    )
+    def foreach_batch_zones(batch_df, batch_id):
+        if batch_df.count() > 0:
+            # 1. Écrire vers PostgreSQL
+            write_zones_to_postgres(batch_df, batch_id)
+            
+            # 2. Écrire vers Kafka
+            try:
+                json_df = batch_df \
+                    .withColumn("sensor_ids_str", concat_ws(",", col("sensor_ids"))) \
+                    .drop("sensor_ids") \
+                    .select(to_json(struct("*")).alias("value"))
+                
+                json_df.write \
+                    .format("kafka") \
+                    .option("kafka.bootstrap.servers", KAFKA_CONFIG["bootstrap_servers"]) \
+                    .option("kafka.security.protocol", KAFKA_CONFIG["security_protocol"]) \
+                    .option("kafka.sasl.mechanism", KAFKA_CONFIG["sasl_mechanism"]) \
+                    .option("kafka.sasl.jaas.config", get_kafka_jaas_config()) \
+                    .option("topic", OUTPUT_TOPIC_ZONES) \
+                    .save()
+                print(f"   📤 Kafka: {batch_df.count()} messages → {OUTPUT_TOPIC_ZONES}")
+            except Exception as e:
+                print(f"   ❌ Erreur Kafka (zones): {e}")
     
-    return json_df.writeStream \
-        .format("kafka") \
-        .option("kafka.bootstrap.servers", KAFKA_CONFIG["bootstrap_servers"]) \
-        .option("kafka.security.protocol", KAFKA_CONFIG["security_protocol"]) \
-        .option("kafka.sasl.mechanism", KAFKA_CONFIG["sasl_mechanism"]) \
-        .option("kafka.sasl.jaas.config", jaas_config) \
-        .option("topic", OUTPUT_TOPIC_ZONES) \
-        .option("checkpointLocation", f"{CHECKPOINT_DIR}/kafka_zones") \
+    return df.writeStream \
+        .foreachBatch(foreach_batch_zones) \
+        .option("checkpointLocation", f"{CHECKPOINT_DIR}/zones_combined") \
         .outputMode("update") \
         .start()
 
@@ -609,20 +610,23 @@ def write_to_kafka_zones(df):
 # ============================================================
 def main():
     print("=" * 80)
-    print("🌬️  SPARK STREAMING - CAPTEURS VIRTUELS")
+    print("🌬️  SPARK STREAMING - CAPTEURS VIRTUELS + POSTGRESQL")
     print("=" * 80)
     print(f"📡 Kafka Confluent Cloud")
-    print(f"📥 Topic d'entrée (capteur physique) : {INPUT_TOPIC}")
-    print(f"📤 Topic capteurs virtuels           : {OUTPUT_TOPIC_SENSORS}")
-    print(f"📤 Topic moyennes zones              : {OUTPUT_TOPIC_ZONES}")
-    print(f"⏱️  Fenêtre d'agrégation              : {AGGREGATION_WINDOW}")
+    print(f"📥 Topic d'entrée         : {INPUT_TOPIC}")
+    print(f"📤 Topic capteurs         : {OUTPUT_TOPIC_SENSORS}")
+    print(f"📤 Topic zones            : {OUTPUT_TOPIC_ZONES}")
+    print(f"⏱️  Fenêtre d'agrégation   : {AGGREGATION_WINDOW}")
+    print()
+    print(f"🗄️  PostgreSQL")
+    print(f"   Host     : {POSTGRES_CONFIG['host']}:{POSTGRES_CONFIG['port']}")
+    print(f"   Database : {POSTGRES_CONFIG['database']}")
+    print(f"   Tables   : {TABLE_SENSORS}, {TABLE_ZONES}")
     
-    # Afficher la configuration des capteurs
     print_sensors_summary()
     
-    # Compter le total
     total_sensors = sum(len(z["sensors"]) for z in SENSORS_CONFIG.values())
-    print(f"📊 1 message entrant → {total_sensors} messages sortants (capteurs virtuels)")
+    print(f"📊 1 message entrant → {total_sensors} messages sortants")
     print("=" * 80)
     
     # Créer session Spark
@@ -640,25 +644,16 @@ def main():
     
     # Agréger par zone
     zone_df = aggregate_by_zone(sensor_df)
-    print("✅ Pipeline zones (moyennes) configuré")
+    print("✅ Pipeline zones configuré")
     
-    # ============================================
-    # MODE DE SORTIE - Choisir UN des modes:
-    # ============================================
-    
-    # MODE 1: Console (Debug) - Affiche les deux flux
-    print("\n📺 Mode: Console (Debug)")
-    query_sensors = write_to_console_sensors(sensor_df, "sensors_stream")
-    query_zones = write_to_console_zones(zone_df, "zones_stream")
-    
-    # MODE 2: Kafka (Production) - Décommenter pour activer
-    # print("\n📤 Mode: Kafka (Production)")
-    # query_sensors = write_to_kafka_sensors(sensor_df)
-    # query_zones = write_to_kafka_zones(zone_df)
+    # Démarrer les streams (Kafka + PostgreSQL)
+    print("\n📤 Mode: Kafka + PostgreSQL (Production)")
+    query_sensors = write_sensors_to_kafka_and_postgres(sensor_df)
+    query_zones = write_zones_to_kafka_and_postgres(zone_df)
     
     print("\n🚀 Streaming démarré... (Ctrl+C pour arrêter)")
-    print(f"   → Flux 1: {total_sensors} capteurs virtuels par message")
-    print(f"   → Flux 2: Moyennes par zone (agrégées par {AGGREGATION_WINDOW})\n")
+    print(f"   → Flux 1: {total_sensors} capteurs → Kafka + PostgreSQL")
+    print(f"   → Flux 2: 5 zones (moyennes) → Kafka + PostgreSQL\n")
     
     try:
         spark.streams.awaitAnyTermination()

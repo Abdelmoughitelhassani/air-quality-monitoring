@@ -15,7 +15,7 @@ conf = {
 
 consumer = Consumer(conf)
 
-TOPIC = "topic_9"   # 🔥 change comme ton producer
+TOPIC = "air_quality_sensors3"   # 🔥 change comme ton producer
 
 consumer.subscribe([TOPIC])
 print("📥 En attente des messages... Ctrl+C pour arrêter\n")

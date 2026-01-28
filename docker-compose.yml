@@ -70,13 +70,71 @@ services:
     depends_on:
       - spark-master
       - spark-worker-1
+      - postgres  # ← Ajouté: attend que PostgreSQL soit prêt
     networks:
       - airquality-network
     command: ["tail", "-f", "/dev/null"]
+
+  # ============================================
+  # PostgreSQL Database
+  # ============================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres-airquality
+    hostname: postgres
+    environment:
+      POSTGRES_USER: airquality_user
+      POSTGRES_PASSWORD: airquality_pass
+      POSTGRES_DB: airquality
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-postgres.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - airquality-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airquality_user -d airquality"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ============================================
+  # pgAdmin (Interface Web PostgreSQL) - OPTIONNEL
+  # ============================================
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin-airquality
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@airquality.local
+      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_LISTEN_PORT: 80
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - airquality-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+# ============================================
+# Volumes persistants
+# ============================================
+volumes:
+  postgres_data:
+    name: airquality_postgres_data
+  pgadmin_data:
+    name: airquality_pgadmin_data
 
 # ============================================================
 # NETWORK
 # ============================================================
 networks:
   airquality-network:
+    name: airquality-network
     driver: bridge

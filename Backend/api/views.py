@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from confluent_kafka import Consumer, KafkaError
 import json
 import pandas as pd
+import os
 
 # ────────────────────────────────────────────────────────────────
 # Structure de données en mémoire (la plus utilisée)
@@ -27,11 +28,11 @@ data_lock = threading.Lock()
 
 def kafka_consumer_thread():
     consumer_conf = {
-        'bootstrap.servers': 'pkc-921jm.us-east-2.aws.confluent.cloud:9092',
+        'bootstrap.servers': os.environ.get('KAFKA_BOOTSTRAP_SERVERS'),
         'security.protocol': 'SASL_SSL',
         'sasl.mechanisms': 'PLAIN',
-        'sasl.username': 'ML4G7QKTNTKH5IBV',
-        'sasl.password': 'cfltAGGAi+lzTeltLpNCH3aF3sCG5/pbE0TemK59vWMBZicFAd8sicKkeVQCbh8g',
+        'sasl.username': os.environ.get('KAFKA_SASL_USERNAME'),
+        'sasl.password': os.environ.get('KAFKA_SASL_PASSWORD'),
         'group.id': 'air-quality-backend-consumer',
         'auto.offset.reset': 'latest',          # on commence par les messages récents
         'enable.auto.commit': True,

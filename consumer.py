@@ -1,12 +1,12 @@
 from confluent_kafka import Consumer, KafkaException, KafkaError
-
+import os
 # Configuration du consumer pour Confluent Cloud
 conf = {
-    'bootstrap.servers': 'pkc-921jm.us-east-2.aws.confluent.cloud:9092',
+    'bootstrap.servers': os.environ.get('KAFKA_BOOTSTRAP_SERVERS'),
     'security.protocol': 'SASL_SSL',
     'sasl.mechanisms': 'PLAIN',
-    'sasl.username': 'ML4G7QKTNTKH5IBV',
-    'sasl.password': 'cfltAGGAi+lzTeltLpNCH3aF3sCG5/pbE0TemK59vWMBZicFAd8sicKkeVQCbh8g',
+    'sasl.username': os.environ.get('KAFKA_SASL_USERNAME'),
+    'sasl.password': os.environ.get('KAFKA_SASL_PASSWORD'),
 
     # IMPORTANT POUR CONSUMER
     'group.id': 'python-consumer-group-1',   # nom de groupe → change si tu veux repartitionner

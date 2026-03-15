@@ -28,16 +28,17 @@ from pyspark.sql.types import (
     StructType, StructField, StringType, IntegerType, 
     DoubleType, BooleanType, TimestampType
 )
+import os
 
 # ============================================================
 # CONFIGURATION KAFKA CONFLUENT CLOUD
 # ============================================================
 KAFKA_CONFIG = {
-    "bootstrap_servers": "pkc-921jm.us-east-2.aws.confluent.cloud:9092",
+    "bootstrap_servers": os.environ.get('KAFKA_BOOTSTRAP_SERVERS'),
     "security_protocol": "SASL_SSL",
     "sasl_mechanism": "PLAIN",
-    "sasl_username": "ML4G7QKTNTKH5IBV",
-    "sasl_password": "cfltAGGAi+lzTeltLpNCH3aF3sCG5/pbE0TemK59vWMBZicFAd8sicKkeVQCbh8g",
+    "sasl_username": os.environ.get('KAFKA_SASL_USERNAME'),
+    "sasl_password": os.environ.get('KAFKA_SASL_PASSWORD'),
 }
 
 # Topics
@@ -60,7 +61,7 @@ POSTGRES_CONFIG = {
     "port": "5432",
     "database": "airquality",
     "user": "airquality_user",
-    "password": "airquality_pass",
+    "password": os.environ.get("POSTGRES_PASSWORD"),
 }
 
 POSTGRES_URL = f"jdbc:postgresql://{POSTGRES_CONFIG['host']}:{POSTGRES_CONFIG['port']}/{POSTGRES_CONFIG['database']}"

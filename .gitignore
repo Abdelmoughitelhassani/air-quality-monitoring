@@ -44,7 +44,6 @@ Thumbs.db
 
 # Other files from your screenshot you probably don't want in git
 api-key*.txt
-consumer.py               # ← usually contains secrets/keys
 data_processed_final*.csv  # ← processed data (often large / regeneratable)
 
 # If you really never want to commit any csv data files:
@@ -56,3 +55,16 @@ output_folder/
 data/
 *.log
 __pycache__/
+
+
+# Secrets
+.env
+.env.*
+*.env
+
+# Spark checkpoints
+checkpoint/
+
+# Mobile
+node_modules/
+.expo/
